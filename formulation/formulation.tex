@@ -1,0 +1,288 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{hyperref}
+\usepackage{titlesec}
+
+\geometry{margin=2.5cm}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\definecolor{accent}{RGB}{90,50,120}
+\definecolor{lightgray}{RGB}{245,245,245}
+
+\hypersetup{colorlinks=true, linkcolor=accent, urlcolor=accent}
+
+\titleformat{\section}{\Large\bfseries\color{accent}}{}{0em}{}
+\titleformat{\subsection}{\large\bfseries}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{}{0em}{}
+
+\newtcolorbox{highlight}{
+  colback=accent!5,
+  colframe=accent!60,
+  sharp corners,
+  boxrule=0.5pt
+}
+
+\title{
+  \vspace{-1cm}
+  {\color{accent}\rule{\linewidth}{1pt}}\\[0.5cm]
+  {\LARGE\bfseries VRPTW-SM: Vehicle Routing with Time Windows and Skill Matching}\\[0.2cm]
+  {\large Mathematical Formulation}\\[0.3cm]
+  {\color{accent}\rule{\linewidth}{1pt}}
+}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\section{Overview}
+
+The problem consists of assigning customer orders to service providers so as to \textbf{minimize unmet demand (UD)} and \textbf{total travel time}, subject to constraints on skill compatibility, availability, travel time, and time windows.
+
+This problem belongs to the family of \textit{Vehicle Routing Problems with Time Windows and Skill Matching} (VRPTW-SM). Each provider is analogous to a ``vehicle'' traversing a route of service appointments throughout the day, departing from home.
+
+%% ============================================================
+\section{Sets}
+
+\begin{tabular}{@{}cp{12cm}@{}}
+\toprule
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+$\mathcal{S}$ & Set of available providers for the day. Each provider $s \in \mathcal{S}$ is a professional with specific skills, a home location, and an availability window. \\[6pt]
+$\mathcal{O}$ & Set of orders to be fulfilled during the day. Each order $j \in \mathcal{O}$ has a service type, customer location, and requested time. \\[6pt]
+$\mathcal{K}$ & Set of service categories. \\[6pt]
+$\mathcal{A}_s \subseteq \mathcal{O}$ & Eligible orders for provider $s$ --- orders whose service type matches the provider's certifications \textbf{and} whose time window is compatible with the provider's availability. Pre-computed. \\[6pt]
+$\mathcal{S}_j \subseteq \mathcal{S}$ & Eligible providers for order $j$ (inverse of $\mathcal{A}_s$). \\
+\bottomrule
+\end{tabular}
+
+%% ============================================================
+\section{Parameters}
+
+\subsection{Order Data}
+
+\begin{tabular}{@{}clll@{}}
+\toprule
+\textbf{Symbol} & \textbf{Description} & \textbf{Unit} & \textbf{Source} \\
+\midrule
+$\text{type}_j$ & Service category of order $j$ & --- & Order data \\
+$\text{loc}_j$ & Customer location (lat, lng) & degrees & Order data \\
+$r_j$ & Time requested by the customer & min & Order data \\
+$d_j$ & Estimated service duration & min & Order data \\
+$v_j$ & Ticket value & \$ & Order data \\
+\bottomrule
+\end{tabular}
+
+\subsection{Provider Data}
+
+\begin{tabular}{@{}cp{7cm}ll@{}}
+\toprule
+\textbf{Symbol} & \textbf{Description} & \textbf{Unit} & \textbf{Source} \\
+\midrule
+$\text{skill}_s$ & Certifications of provider $s$ & --- & Data \\
+$\text{home}_s$ & Home location (lat, lng) & degrees & Data \\
+$\text{mode}_s$ & Transportation mode & --- & Data \\
+$\text{dedic}_s$ & Dedication level to the platform ($0$--$1$). \newline $1{=}$exclusive, $<1{=}$shared with other platforms & --- & Ops \\
+$e_s$ & Availability start time & min & Data \\
+$l_s$ & Availability end time & min & Data \\
+$f_{s,j}$ & Speed factor for service $\text{type}_j$. \newline Actual duration $= d_j \times f_{s,j}$ ($<1$ = faster) & --- & Historical \\
+\bottomrule
+\end{tabular}
+
+\subsection{Computed Parameters}
+
+\begin{tabular}{@{}cp{7cm}ll@{}}
+\toprule
+\textbf{Symbol} & \textbf{Description} & \textbf{Unit} & \textbf{Source} \\
+\midrule
+$\tau_{s,i,j}$ & Travel time for provider $s$ from the location of $i$ (or home) to $j$ & min & Computed \\
+$\beta$ & Buffer between appointments (personal organization, etc.) & min & TBD \\
+$W$ & Time window tolerance ($W{=}0$: fixed) & min & TBD \\
+$G_{\max}$ & Maximum gap between consecutive appointments & min & TBD \\
+$\delta$ & Idle time penalty weight & --- & Calibrate \\
+$M$ & Big-M constant (sufficiently large) & min & 1440 \\
+\bottomrule
+\end{tabular}
+
+%% ============================================================
+\section{Decision Variables}
+
+\subsection{$x_{s,j} \in \{0,1\}$ --- Assignment}
+
+$x_{s,j} = 1$ if provider $s$ is assigned to fulfill order $j$.
+
+Each order is served by at most one provider. Each provider can fulfill multiple orders throughout the day. Only exists for $s \in \mathcal{S}$, $j \in \mathcal{A}_s$ (eligible pairs).
+
+\subsection{$y_{s,i,j} \in \{0,1\}$ --- Sequencing}
+
+$y_{s,i,j} = 1$ if provider $s$ serves order $j$ \textbf{immediately after} order $i$. When $i = 0$, it means $j$ is the first order of the day (provider departs from home to $j$).
+
+This variable defines the \textbf{order} of appointments --- it transforms the problem from a simple assignment into a routing problem. The sequence matters because travel time depends on where the provider is after completing the previous order.
+
+\subsection{$t_{s,j} \in \mathbb{R}_{\geq 0}$ --- Start Time}
+
+Time (minutes since midnight) at which $s$ begins serving $j$. Determined by the optimizer. Only relevant when $x_{s,j} = 1$.
+
+\subsection{$u_j \in \{0,1\}$ --- Unmet Demand (UD)}
+
+$u_j = 1$ if order $j$ is \textbf{not} assigned to any provider. The primary objective is to minimize the number of orders with $u_j = 1$.
+
+\subsection{$\text{idle}_{s,i,j} \in \mathbb{R}_{\geq 0}$ --- Idle Time}
+
+Time that provider $s$ spends idle between the end of order $i$ and the start of order $j$, net of travel and buffer. An efficient schedule has idle time close to zero.
+
+%% ============================================================
+\section{Objective Function}
+
+Minimize a weighted combination of four criteria, in order of priority:
+
+\begin{highlight}
+\begin{equation}
+\min \quad
+\underbrace{\alpha \sum_{j \in \mathcal{O}} u_j}_{\text{(1) Minimize UD}}
+\;+\;
+\underbrace{\beta \sum_{s} \sum_{i} \sum_{j} \tau_{s,i,j} \cdot y_{s,i,j}}_{\text{(2) Minimize travel}}
+\;+\;
+\underbrace{\gamma \sum_{s} \sum_{j} (t_{s,j} - r_j) \cdot x_{s,j}}_{\text{(3) Minimize delay}}
+\;+\;
+\underbrace{\delta \sum_{s} \sum_{i} \sum_{j} \text{idle}_{s,i,j}}_{\text{(4) Compact schedules}}
+\end{equation}
+\end{highlight}
+
+\textbf{Explanation of terms:}
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Minimize UD (weight $\alpha$):} Each unfulfilled order represents lost revenue and a dissatisfied customer. Highest weight --- the optimizer exhausts all possibilities before leaving an order unassigned.
+
+\item \textbf{Minimize total travel (weight $\beta$):} Sum of all travel times. Less travel = more time for appointments, lower transportation costs for the provider, lower risk of delay.
+
+\item \textbf{Minimize time delay (weight $\gamma$):} When a tolerance window exists ($W > 0$), this incentivizes the appointment to start as close as possible to the requested time. Lower weight --- we prefer a 15-minute delay over losing the order entirely.
+
+\item \textbf{Penalize idle time (weight $\delta$):} Encourages compact, realistic schedules. Without this, the optimizer could generate schedules where a provider has an order at 9\,AM and the next at 4\,PM --- mathematically valid but operationally absurd. Especially important for non-exclusive providers ($\text{dedic}_s < 1$), who may abandon the schedule if there are large gaps.
+\end{enumerate}
+
+\textbf{Weight hierarchy:} $\alpha \gg \beta > \delta > \gamma$
+
+%% ============================================================
+\section{Constraints}
+
+\subsection{C1 --- Each order: one provider or UD}
+
+\begin{equation}
+\sum_{s \in \mathcal{S}_j} x_{s,j} + u_j = 1 \quad \forall\, j \in \mathcal{O}
+\end{equation}
+
+Every order has exactly one outcome: either it is assigned to a provider, or it is marked as unmet demand.
+
+\subsection{C2 --- Skill compatibility}
+
+\begin{equation}
+x_{s,j} = 0 \quad \text{if } \text{type}_j \notin \text{skill}_s
+\end{equation}
+
+Implemented via $\mathcal{A}_s$ --- the variables $x_{s,j}$ only exist for eligible pairs.
+
+\subsection{C3 --- Flow conservation (predecessor)}
+
+\begin{equation}
+\sum_{\substack{i \in \{0\} \cup \mathcal{A}_s \\ i \neq j}} y_{s,i,j} = x_{s,j} \quad \forall\, s \in \mathcal{S},\; j \in \mathcal{A}_s
+\end{equation}
+
+If an order is assigned to a provider, exactly one order (or home) precedes it in the sequence.
+
+\subsection{C4 --- Flow conservation (successor)}
+
+\begin{equation}
+\sum_{\substack{j \in \mathcal{A}_s \\ j \neq i}} y_{s,i,j} \leq x_{s,i} \quad \forall\, s,\; i \in \mathcal{A}_s
+\qquad\qquad
+\sum_{j \in \mathcal{A}_s} y_{s,0,j} \leq 1 \quad \forall\, s
+\end{equation}
+
+Each served order has at most one successor. The provider departs from home at most once. Together with C3, this ensures the appointments form a linear chain (route).
+
+\subsection{C5 --- Temporal feasibility between consecutive appointments}
+
+\begin{equation}
+t_{s,i} + d_i \cdot f_{s,i} + \beta + \tau_{s,i,j} \leq t_{s,j} + M(1 - y_{s,i,j}) \quad \forall\, s,\; i,j \in \mathcal{A}_s,\; i \neq j
+\end{equation}
+
+If $s$ serves $j$ immediately after $i$: complete service $i$ (adjusted duration) + buffer $\beta$ + travel $\tau$ before starting $j$.
+
+\subsection{C6 --- First trip of the day (departure from home)}
+
+\begin{equation}
+e_s + \tau_{s,0,j} \leq t_{s,j} + M(1 - y_{s,0,j}) \quad \forall\, s,\; j \in \mathcal{A}_s
+\end{equation}
+
+The first appointment accounts for travel from the provider's home to the customer.
+
+\subsection{C7 --- Customer time window}
+
+\begin{equation}
+r_j \cdot x_{s,j} \leq t_{s,j} \quad \forall\, s,\; j \in \mathcal{A}_s
+\end{equation}
+\begin{equation}
+t_{s,j} \leq (r_j + W) + M(1 - x_{s,j}) \quad \forall\, s,\; j \in \mathcal{A}_s
+\end{equation}
+
+The appointment starts within $[r_j,\; r_j + W]$. If $W = 0$, the time is fixed.
+
+\subsection{C8 --- Provider availability (end of day)}
+
+\begin{equation}
+t_{s,j} + d_j \cdot f_{s,j} \leq l_s + M(1 - x_{s,j}) \quad \forall\, s,\; j \in \mathcal{A}_s
+\end{equation}
+
+The appointment must finish before the end of the provider's availability window.
+
+\subsection{C9 --- Provider availability (start of day)}
+
+\begin{equation}
+t_{s,j} \geq e_s - M(1 - x_{s,j}) \quad \forall\, s,\; j \in \mathcal{A}_s
+\end{equation}
+
+No appointment may begin before the start of the provider's availability window.
+
+\subsection{C10 --- Idle time definition}
+
+\begin{equation}
+\text{idle}_{s,i,j} \geq t_{s,j} - \big(t_{s,i} + d_i \cdot f_{s,i} + \beta + \tau_{s,i,j}\big) - M(1 - y_{s,i,j})
+\end{equation}
+
+Captures the idle time between two consecutive appointments. Since idle appears in the objective function with a positive weight (minimization), the optimizer naturally reduces these values.
+
+\subsection{C11 --- Maximum gap between consecutive appointments}
+
+\begin{equation}
+t_{s,j} - \big(t_{s,i} + d_i \cdot f_{s,i}\big) \leq G_{\max} + M(1 - y_{s,i,j}) \quad \forall\, s,\; i,j \in \mathcal{A}_s,\; i \neq j
+\end{equation}
+
+The total interval between the end of one service and the start of the next cannot exceed $G_{\max}$. This prevents fragmented schedules where the provider would be idle for hours away from home.
+
+%% ============================================================
+\section{Complexity and Solution Approach}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}lccl@{}}
+\toprule
+\textbf{Scale} & \textbf{Orders/day} & \textbf{Providers} & \textbf{Approach} \\
+\midrule
+1 zone & 30--50 & 10--20 & Exact MIP (solver) --- seconds \\
+Full city & 250--300 & 200--300 & Clustering + MIP per zone \\
+\bottomrule
+\end{tabular}
+
+\vspace{6pt}
+For an initial evaluation, we recommend starting with a \textbf{single zone} using an exact solver, and scaling to the full city with geographic partitioning if results are promising.
+
+\end{document}

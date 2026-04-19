@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Op-Era — Programação Inteligente de Atendimentos</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  :root {
+    --bg: #000;
+    --surface: #0e0e0e;
+    --surface-2: #161616;
+    --border: rgba(255,255,255,.07);
+    --border-hl: rgba(255,255,255,.15);
+    --green: #5a9e72;
+    --green-dim: rgba(90,158,114,.10);
+    --green-border: rgba(90,158,114,.25);
+    --red: #e05555;
+    --red-dim: rgba(224,85,85,.10);
+    --red-border: rgba(224,85,85,.25);
+    --text: rgba(255,255,255,.65);
+    --text-dim: rgba(255,255,255,.35);
+    --heading: #fff;
+    --white: #fff;
+    --mono: 'SF Mono','Fira Code','Cascadia Code','Consolas',monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body {
+    background:var(--bg); color:var(--text);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    line-height:1.75; font-size:17px;
+  }
+
+  /* ── Nav ── */
+  nav {
+    position:fixed; top:0; left:0; right:0; z-index:100;
+    background:rgba(0,0,0,.88); backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+    padding:0 3rem; display:flex; align-items:center; height:52px;
+  }
+  nav .brand { font-weight:700; color:var(--white); font-size:.82rem; letter-spacing:2px; text-transform:uppercase; white-space:nowrap; }
+  nav .links { display:flex; gap:1.8rem; margin-left:3rem; overflow-x:auto; }
+  nav .links a { color:var(--text-dim); text-decoration:none; font-size:.72rem; letter-spacing:1.5px; text-transform:uppercase; white-space:nowrap; transition:color .2s; }
+  nav .links a:hover, nav .links a.active { color:var(--white); }
+
+  /* ── Section ── */
+  section { min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:100px 3rem 4rem; max-width:960px; margin:0 auto; }
+  section.compact { min-height:auto; padding-top:2rem; }
+
+  /* ── Typography ── */
+  h1 { font-size:3rem; font-weight:800; line-height:1.1; color:var(--heading); margin-bottom:1rem; }
+  h2 { font-size:1.8rem; font-weight:700; line-height:1.2; color:var(--heading); margin-bottom:1.25rem; }
+  h3 { font-size:1.05rem; font-weight:700; color:var(--heading); margin-bottom:.75rem; margin-top:1.5rem; }
+  .label { font-size:.7rem; letter-spacing:3px; text-transform:uppercase; color:var(--text-dim); font-weight:600; margin-bottom:.5rem; }
+  .label-green { color:var(--green); }
+  .label-red { color:var(--red); }
+
+  /* ── Layout helpers ── */
+  .rule { border:0; border-top:1px solid var(--border); margin:2.5rem 0; }
+  .side-by-side { display:grid; grid-template-columns:1fr 1fr; gap:2rem; margin:1.5rem 0; }
+  .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin:1.5rem 0; }
+  .card { background:var(--surface); border:1px solid var(--border); padding:1.5rem; }
+
+  /* ── Metric cards ── */
+  .metric-card { background:var(--surface); border:1px solid var(--border); padding:1.5rem; text-align:center; }
+  .metric-card .value { font-size:2.5rem; font-weight:800; color:var(--heading); font-family:var(--mono); }
+  .metric-card .desc { font-size:.78rem; color:var(--text-dim); margin-top:.25rem; }
+  .metric-card.hl { border-color:var(--green-border); }
+  .metric-card.hl .value { color:var(--green); }
+
+  /* ── Hero number ── */
+  .hero-number { font-size:5rem; font-weight:900; line-height:1; font-family:var(--mono); color:var(--heading); }
+  .hero-number .from { color:var(--text-dim); font-size:3rem; font-weight:400; text-decoration:line-through; }
+  .hero-number .arrow { color:var(--text-dim); font-size:2.5rem; }
+
+  /* ── Terminal flow (Op-Era pipeline style) ── */
+  .terminal-flow {
+    display:flex; align-items:stretch; gap:0; margin:2rem 0;
+    font-family:var(--mono); overflow-x:auto;
+  }
+  .term-box {
+    border:1px dashed var(--border-hl); padding:1.25rem 1rem; flex:1;
+    background:var(--surface); position:relative; min-width:160px;
+  }
+  .term-box.hl-green { border-color:var(--green-border); background:var(--green-dim); }
+  .term-box.hl-red { border-color:var(--red-border); background:var(--red-dim); }
+  .term-head {
+    font-size:.6rem; letter-spacing:2.5px; text-transform:uppercase;
+    color:var(--text-dim); margin-bottom:.75rem; display:flex; align-items:center; gap:.5rem;
+  }
+  .term-head .ico { font-size:.85rem; line-height:1; }
+  .term-line { font-size:.78rem; color:var(--text); line-height:2; }
+  .term-line::before { content:'▸ '; color:var(--text-dim); }
+  .term-line.red::before { color:var(--red); }
+  .term-line.green::before { color:var(--green); }
+  .term-connector {
+    display:flex; align-items:center; padding:0 .25rem;
+    color:var(--text-dim); font-family:var(--mono); font-size:.8rem;
+    white-space:nowrap;
+  }
+  .term-connector.long { letter-spacing:2px; }
+
+  /* ── Data panel (before/after) ── */
+  .data-panel { background:var(--surface); border:1px solid var(--border); padding:1.25rem 1.5rem; font-family:var(--mono); font-size:.82rem; }
+  .data-panel.hl { border-color:var(--green-border); }
+  .data-panel .panel-label { font-size:.65rem; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); font-weight:600; margin-bottom:1rem; }
+  .data-panel .row { display:flex; gap:1rem; padding:.3rem 0; border-bottom:1px solid var(--border); }
+  .data-panel .row:last-of-type { border-bottom:none; }
+  .data-panel .time { min-width:40px; color:var(--text-dim); }
+  .data-panel .place { flex:1; color:var(--text); }
+  .data-panel .km { min-width:55px; text-align:right; color:var(--text-dim); }
+  .data-panel .summary { margin-top:.75rem; padding-top:.75rem; border-top:1px solid var(--border-hl); font-size:.78rem; color:var(--text-dim); }
+
+  /* ── Schedule heatmap ── */
+  .sched-grid { display:grid; grid-template-columns:36px repeat(7,36px); gap:2px; font-family:var(--mono); font-size:.6rem; }
+  .sched-header { display:flex; align-items:center; justify-content:center; color:var(--text-dim); font-weight:600; letter-spacing:1px; height:22px; }
+  .sched-cell { height:28px; display:flex; align-items:center; justify-content:center; background:var(--surface); color:var(--text-dim); font-size:.6rem; }
+  .sched-label { display:flex; align-items:center; justify-content:flex-end; padding-right:4px; color:var(--text-dim); height:28px; }
+
+  /* ── Histogram ── */
+  .histo-row { display:flex; align-items:center; gap:.5rem; margin-bottom:3px; font-family:var(--mono); font-size:.72rem; }
+  .histo-label { min-width:28px; text-align:right; color:var(--text-dim); }
+  .histo-bars { flex:1; display:flex; flex-direction:column; gap:1px; }
+  .histo-bar { height:10px; border-radius:1px; min-width:2px; }
+  .histo-bar.bl { background:rgba(255,255,255,.15); }
+  .histo-bar.opt { background:var(--green); opacity:.7; }
+  .histo-val { min-width:80px; font-size:.62rem; color:var(--text-dim); }
+
+  /* ── Spec table ── */
+  .spec-table { font-family:var(--mono); font-size:.82rem; width:100%; border-collapse:collapse; margin:1.5rem 0; }
+  .spec-table th { font-size:.65rem; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); font-weight:600; text-align:left; padding:.6rem 1rem; border-bottom:1px solid var(--border-hl); }
+  .spec-table td { padding:.55rem 1rem; border-bottom:1px solid var(--border); color:var(--text); }
+  .spec-table td:first-child { color:var(--text-dim); }
+  .spec-table tr:last-child td { border-bottom:none; }
+
+  /* ── Summary table ── */
+  .summary-table { width:100%; border-collapse:collapse; margin:1.5rem 0; font-size:.9rem; }
+  .summary-table th { font-size:.65rem; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); font-weight:600; text-align:right; padding:.6rem 1rem; border-bottom:1px solid var(--border-hl); }
+  .summary-table th:first-child { text-align:left; }
+  .summary-table td { padding:.55rem 1rem; text-align:right; border-bottom:1px solid var(--border); color:var(--text); }
+  .summary-table td:first-child { text-align:left; color:var(--text-dim); }
+  .summary-table tr:last-child td { border-bottom:none; }
+
+  /* ── Waterfall ── */
+  .waterfall-row { display:flex; align-items:flex-end; gap:2rem; margin:2rem 0 1rem; flex-wrap:wrap; }
+  .wf-stack { display:flex; flex-direction:column; align-items:center; width:130px; text-align:center; }
+  .wf-stack .wf-label { font-size:.65rem; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); margin-bottom:.5rem; }
+  .wf-served { border:1px solid var(--border-hl); background:var(--surface); display:flex; align-items:center; justify-content:center; flex-direction:column; width:100%; }
+  .wf-served .num { font-size:1.2rem; font-weight:800; color:var(--heading); }
+  .wf-served .lbl { font-size:.65rem; color:var(--text-dim); }
+  .wf-dr { border:1px solid var(--border-hl); border-top:0; background:var(--red-dim); display:flex; align-items:center; justify-content:center; width:100%; }
+  .wf-dr .num { font-size:.7rem; font-weight:700; color:var(--red); }
+
+  /* ── Map ── */
+  .map-container { height:400px; border:1px solid var(--border-hl); margin:1.5rem 0; }
+  .map-container-sm { height:300px; }
+  .map-legend {
+    display:flex; flex-wrap:wrap; gap:1.25rem; margin-top:.5rem;
+    font-family:var(--mono); font-size:.62rem; color:var(--text-dim);
+  }
+  .map-legend-item { display:flex; align-items:center; gap:.4rem; }
+  .legend-dot {
+    width:10px; height:10px; border-radius:50%; display:inline-block;
+  }
+  .legend-dot.dashed {
+    background:transparent; border:1.5px dashed var(--green);
+  }
+
+  /* ── Dropdown ── */
+  details { background:var(--surface); border:1px solid var(--border); margin-bottom:.5rem; }
+  details summary { padding:1rem 1.25rem; cursor:pointer; font-weight:600; color:var(--heading); font-size:.92rem; list-style:none; display:flex; justify-content:space-between; align-items:center; }
+  details summary::-webkit-details-marker { display:none; }
+  details summary::after { content:'▸'; color:var(--text-dim); font-size:.75rem; transition:transform .2s; }
+  details[open] summary::after { transform:rotate(90deg); }
+  details .detail-body { padding:0 1.25rem 1.25rem; font-size:.88rem; color:var(--text-dim); line-height:1.7; }
+  details .detail-body strong { color:var(--text); }
+
+  /* ── Steps ── */
+  .step-grid { display:grid; grid-template-columns:48px 1fr; gap:.75rem 1.25rem; margin:2rem 0; }
+  .step-num { width:48px; height:48px; border:1px solid var(--border-hl); display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-weight:800; color:var(--text-dim); font-size:.9rem; }
+
+  /* ── Highlights / quote / footer ── */
+  .hl { color:var(--green); font-weight:600; }
+  .hl-red { color:var(--red); font-weight:600; }
+  .quote { border-left:2px solid var(--green-border); padding:1rem 1.5rem; margin:2rem 0; background:var(--green-dim); font-style:italic; color:var(--heading); font-size:.95rem; }
+  footer { text-align:center; padding:3rem; font-size:.75rem; color:var(--text-dim); border-top:1px solid var(--border); letter-spacing:1px; }
+
+  /* ── Icon cards (Perfis + Optimizer) ── */
+  .icon-card {
+    background:var(--surface); border:1px solid var(--border); padding:1.25rem;
+    display:flex; flex-direction:column; gap:.5rem;
+  }
+  .icon-card .ic-icon {
+    font-family:var(--mono); font-size:1.4rem; line-height:1;
+    color:var(--text-dim); margin-bottom:.25rem;
+  }
+  .icon-card.hl-green { border-color:var(--green-border); }
+  .icon-card.hl-green .ic-icon { color:var(--green); }
+
+  /* ── Responsive ── */
+  @media (max-width:700px) {
+    section { padding:90px 1.25rem 3rem; }
+    .side-by-side, .card-grid { grid-template-columns:1fr; }
+    .terminal-flow { flex-direction:column; }
+    h1 { font-size:2.2rem; } h2 { font-size:1.5rem; }
+    .hero-number { font-size:3.5rem; }
+    nav { padding:0 1.25rem; } nav .links { gap:1rem; }
+  }
+
+  /* Leaflet overrides for dark theme */
+  .leaflet-container { background:#0e0e0e; }
+  .leaflet-control-attribution { background:rgba(0,0,0,.6)!important; color:var(--text-dim)!important; font-size:.55rem!important; }
+  .leaflet-control-attribution a { color:var(--text-dim)!important; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="brand">Op-Era <span style="font-weight:400; color:var(--text-dim); letter-spacing:1px;">· Serviços a Domicílio</span></div>
+  <div class="links">
+    <a href="#operacao">Operação</a>
+    <a href="#problema">Problema</a>
+    <a href="#abordagem">Abordagem</a>
+    <a href="#perfis">Perfis</a>
+    <a href="#pratica">Prática</a>
+    <a href="#metodologia">Metodologia</a>
+    <a href="#resultados">Resultados</a>
+    <a href="#premissas">Premissas</a>
+    <a href="#proximos">Próximos</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- CAPA -->
+<!-- ═══════════════════════════════════════ -->
+<section id="cover">
+  <div class="label">Serviços a Domicílio · Marketplace</div>
+  <h1>Programação Inteligente<br>de Atendimentos.</h1>
+  <p>
+    Simulamos o cenário em que todos os pedidos do dia seguinte são alocados
+    de forma centralizada na noite anterior — um <strong>teto de captura</strong>
+    que dimensiona o valor perdido pela falta de coordenação.
+    Backtest sobre 95 dias de dados reais de uma operação de serviços a domicílio em São Paulo.
+  </p>
+  <p style="font-size:.82rem; color:var(--text-dim); font-family:var(--mono);">
+    30.026 pedidos &middot; 449 especialistas &middot; 53 serviços &middot; Jan–Abr 2026
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- A OPERAÇÃO -->
+<!-- ═══════════════════════════════════════ -->
+<section id="operacao">
+  <div class="label">Entendendo a operação</div>
+  <h2>A operação em números.</h2>
+
+  <p>
+    A operação a domicílio conecta clientes a profissionais
+    independentes em toda a região metropolitana de São Paulo — 53 tipos de
+    serviço distintos.
+  </p>
+
+  <div class="card-grid" style="grid-template-columns:repeat(4,1fr); margin-top:1.5rem;">
+    <div class="metric-card">
+      <div class="value" style="font-size:2rem;">30.026</div>
+      <div class="desc">pedidos no dataset</div>
+    </div>
+    <div class="metric-card">
+      <div class="value" style="font-size:2rem;">449</div>
+      <div class="desc">especialistas ativas</div>
+    </div>
+    <div class="metric-card">
+      <div class="value" style="font-size:2rem;">95</div>
+      <div class="desc">dias de operação</div>
+    </div>
+    <div class="metric-card">
+      <div class="value" style="font-size:2rem;">~316</div>
+      <div class="desc">pedidos / dia</div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:2rem;">Cobertura geográfica — um dia típico (10 Fev 2026)</h3>
+  <p style="font-size:.82rem; color:var(--text-dim);">301 pedidos distribuídos por toda a região metropolitana.</p>
+  <div id="map-sp" class="map-container"></div>
+  <div class="map-legend">
+    <div class="map-legend-item"><span class="legend-dot" style="background:rgba(255,255,255,.5);"></span> Atendido</div>
+    <div class="map-legend-item"><span class="legend-dot" style="background:var(--red);"></span> Não atendido (DR)</div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- O PROBLEMA -->
+<!-- ═══════════════════════════════════════ -->
+<section id="problema">
+  <div class="label">A realidade hoje</div>
+  <h2>1 em cada 10 pedidos agendados<br>fica sem atendimento.</h2>
+
+  <p>
+    A cada dia, cerca de 30 clientes agendam um horário, se organizam para
+    estar em casa, e recebem a mensagem: <em>"Nenhuma especialista aceitou
+    o agendamento."</em>
+  </p>
+  <p>
+    Em 95 dias: <span class="hl-red">2.995 pedidos sem atendimento</span>.
+  </p>
+
+  <div class="rule"></div>
+
+  <h3>Como funciona o processo atual</h3>
+
+  <div class="terminal-flow">
+    <div class="term-box">
+      <div class="term-head"><span class="ico">☻</span> CLIENTE</div>
+      <div class="term-line">agenda horário pelo app</div>
+      <div class="term-line">escolhe serviço e endereço</div>
+      <div class="term-line">aguarda confirmação</div>
+    </div>
+    <div class="term-connector">──▸</div>
+    <div class="term-box">
+      <div class="term-head"><span class="ico">≡</span> POOL DE PEDIDOS</div>
+      <div class="term-line">pedido fica visível para</div>
+      <div class="term-line">especialistas da região</div>
+      <div class="term-line">sem coordenação central</div>
+    </div>
+    <div class="term-connector">◂──</div>
+    <div class="term-box">
+      <div class="term-head"><span class="ico">⚡</span> ESPECIALISTAS</div>
+      <div class="term-line">navegam o pool</div>
+      <div class="term-line">escolhem o que encaixa</div>
+      <div class="term-line">otimizam para si mesmas</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:.5rem;">
+    <div class="label" style="margin-bottom:.75rem;">Causa raiz</div>
+    <p style="font-size:.9rem;">
+      Cada especialista otimiza para si mesma: aceita os pedidos que melhor
+      encaixam na sua agenda em termos de distância e horário. Mas ela não
+      vê o quadro completo — um pedido próximo a ela pode ter sido aceito por
+      outra especialista que tinha uma opção melhor chegando logo depois.
+    </p>
+    <p style="font-size:.9rem;">
+      O resultado é um jogo descoordenado onde todos otimizam localmente
+      e ninguém otimiza globalmente. Pedidos em regiões menos populares
+      ou horários menos convenientes ficam órfãos.
+    </p>
+    <p style="font-size:.9rem; color:var(--heading);">
+      <strong>Ninguém vê o quadro completo.</strong>
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- ABORDAGEM -->
+<!-- ═══════════════════════════════════════ -->
+<section id="abordagem">
+  <div class="label">Nossa abordagem</div>
+  <h2>Planejar o dia inteiro de uma vez,<br>na noite anterior.</h2>
+
+  <div style="background:var(--surface); border:1px solid var(--green-border); padding:1.5rem; margin-bottom:2rem;">
+    <div class="label label-green" style="margin-bottom:1rem;">O desafio dos dados</div>
+    <p style="font-size:.88rem; margin-bottom:1rem;">
+      Para otimizar a alocação, precisamos saber <strong style="color:var(--heading);">onde cada especialista está, quando ela trabalha e o que ela faz</strong>. Nenhuma dessas informações existia diretamente nos dados.
+    </p>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px; font-size:.82rem;">
+      <div style="background:var(--red-dim); padding:.8rem 1rem;">
+        <div style="font-size:.65rem; letter-spacing:2px; text-transform:uppercase; color:var(--red); font-weight:600; margin-bottom:.5rem;">O que não existia</div>
+        <div style="line-height:1.8; color:var(--text);">
+          ▸ Endereço residencial das especialistas<br>
+          ▸ Janelas de disponibilidade declaradas<br>
+          ▸ Trajeto entre atendimentos (foi direto? voltou para casa?)<br>
+          ▸ Tipo de transporte utilizado<br>
+          ▸ Se é dedicada à plataforma ou freelancer<br>
+          ▸ Capacidade máxima real por dia
+        </div>
+      </div>
+      <div style="background:var(--green-dim); padding:.8rem 1rem;">
+        <div style="font-size:.65rem; letter-spacing:2px; text-transform:uppercase; color:var(--green); font-weight:600; margin-bottom:.5rem;">O que construímos a partir dos dados</div>
+        <div style="line-height:1.8; color:var(--text);">
+          ▸ Centroide operacional ponderado (proxy de localização)<br>
+          ▸ Grade de disponibilidade inferida do histórico por dia/hora<br>
+          ▸ Raio de cobertura comportamental (p90 da distância real)<br>
+          ▸ Velocidade calibrada com referências de transporte público<br>
+          ▸ Filtro de recência como proxy de atividade na plataforma<br>
+          ▸ Limites de capacidade derivados do comportamento individual
+        </div>
+      </div>
+    </div>
+    <p style="font-size:.82rem; color:var(--text-dim); margin-top:.75rem;">
+      Cada parâmetro foi calibrado a partir dos dados da operação — não de suposições. Detalhes completos na seção <a href="#premissas" style="color:var(--green); text-decoration:none; border-bottom:1px dotted var(--green);">Premissas</a>.
+    </p>
+  </div>
+
+  <p>
+    Simulamos o cenário em que, ao invés de cada especialista escolher
+    isoladamente, <span class="hl">todos os pedidos e todas as especialistas
+    são considerados simultaneamente</span> para encontrar o melhor plano
+    global.
+  </p>
+
+  <div class="terminal-flow">
+    <div class="term-box">
+      <div class="term-head"><span class="ico">⊞</span> INPUT</div>
+      <div class="term-line">todos os pedidos de amanhã</div>
+      <div class="term-line">perfis de 449 especialistas</div>
+      <div class="term-line">restrições inferidas a partir do histórico</div>
+    </div>
+    <div class="term-connector long">═══▸</div>
+    <div class="term-box">
+      <div class="term-head"><span class="ico">◈</span> OTIMIZADOR OP-ERA</div>
+      <div class="term-line">avalia todas as combinações</div>
+      <div class="term-line">respeita janelas + geografia</div>
+      <div class="term-line">minimiza DR e km</div>
+    </div>
+    <div class="term-connector long">═══▸</div>
+    <div class="term-box">
+      <div class="term-head"><span class="ico">✓</span> OUTPUT</div>
+      <div class="term-line">plano completo para o dia</div>
+      <div class="term-line">cada pedido → especialista</div>
+      <div class="term-line">rotas otimizadas</div>
+    </div>
+  </div>
+
+  <p style="font-size:.85rem; color:var(--text-dim); margin-top:.5rem;">
+    <em>Sabemos que esse cenário exige adaptações ao produto atual.
+    O objetivo aqui é demonstrar o potencial da otimização centralizada
+    — quanto valor está sendo perdido pela falta de coordenação.</em>
+  </p>
+
+  <div class="card" style="margin-top:1.5rem;">
+    <div class="label" style="margin-bottom:1rem;">Viabilidade: quando os pedidos são criados?</div>
+    <p style="font-size:.85rem; margin-bottom:1rem;">
+      O backtest assume que todos os pedidos do dia estão disponíveis na noite anterior.
+      Na prática, nem todos estarão. Analisamos o lead time real de 30.026 pedidos:
+    </p>
+    <table style="width:100%; border-collapse:collapse; font-size:.82rem;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border-hl);">
+          <th style="text-align:left; padding:.5rem .8rem; font-size:.6rem; letter-spacing:1.5px; text-transform:uppercase; color:var(--text-dim);">Quando o pedido foi criado</th>
+          <th style="text-align:right; padding:.5rem .8rem; font-size:.6rem; letter-spacing:1.5px; text-transform:uppercase; color:var(--text-dim);">Pedidos</th>
+          <th style="text-align:right; padding:.5rem .8rem; font-size:.6rem; letter-spacing:1.5px; text-transform:uppercase; color:var(--text-dim);">%</th>
+          <th style="text-align:right; padding:.5rem .8rem; font-size:.6rem; letter-spacing:1.5px; text-transform:uppercase; color:var(--text-dim);">Acumulado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:.4rem .8rem;">Até 18h da véspera</td>
+          <td style="text-align:right; padding:.4rem .8rem; font-weight:600; color:var(--green);">19.404</td>
+          <td style="text-align:right; padding:.4rem .8rem; color:var(--green);">64,6%</td>
+          <td style="text-align:right; padding:.4rem .8rem; color:var(--green);">64,6%</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:.4rem .8rem;">Noite/madrugada (18h–07h)</td>
+          <td style="text-align:right; padding:.4rem .8rem;">5.332</td>
+          <td style="text-align:right; padding:.4rem .8rem;">17,8%</td>
+          <td style="text-align:right; padding:.4rem .8rem;">82,4%</td>
+        </tr>
+        <tr>
+          <td style="padding:.4rem .8rem;">Dia do serviço (após 07h)</td>
+          <td style="text-align:right; padding:.4rem .8rem;">5.290</td>
+          <td style="text-align:right; padding:.4rem .8rem;">17,6%</td>
+          <td style="text-align:right; padding:.4rem .8rem;">100%</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="font-size:.85rem; margin-top:1rem;">
+      <strong style="color:var(--heading);">65% dos pedidos já existem às 18h da véspera</strong> —
+      suficiente para uma rodada de otimização batch noturna.
+      Com um segundo corte às 07h, capturamos <strong>82%</strong>.
+      Os 18% restantes são demanda intraday que requer otimização incremental.
+    </p>
+    <p style="font-size:.72rem; color:var(--text-dim); font-family:var(--mono); margin-top:.5rem;">
+      Lead time mediano: 25h (finalizados) vs 14h (DR). Pedidos de DR têm lead time
+      48% menor — demanda de última hora é mais difícil de servir.
+    </p>
+  </div>
+
+  <div class="rule"></div>
+
+  <h3>O que o otimizador considera</h3>
+  <div class="card-grid" style="grid-template-columns:repeat(5,1fr);">
+    <div class="icon-card">
+      <div class="ic-icon">⚙</div>
+      <div class="label" style="font-size:.55rem; margin-bottom:0;">Qualificações</div>
+      <p style="font-size:.78rem; margin:0;">Certificação exata para cada um dos 53 serviços</p>
+    </div>
+    <div class="icon-card">
+      <div class="ic-icon">◎</div>
+      <div class="label" style="font-size:.55rem; margin-bottom:0;">Geografia</div>
+      <p style="font-size:.78rem; margin:0;">Minimizar deslocamento entre atendimentos consecutivos</p>
+    </div>
+    <div class="icon-card">
+      <div class="ic-icon">◷</div>
+      <div class="label" style="font-size:.55rem; margin-bottom:0;">Horários</div>
+      <p style="font-size:.78rem; margin:0;">Janelas inferidas do histórico de quando cada especialista trabalha, por dia da semana</p>
+    </div>
+    <div class="icon-card">
+      <div class="ic-icon">▤</div>
+      <div class="label" style="font-size:.55rem; margin-bottom:0;">Capacidade</div>
+      <p style="font-size:.78rem; margin:0;">Limites de pedidos e minutos baseados no histórico individual</p>
+    </div>
+    <div class="icon-card">
+      <div class="ic-icon">⇄</div>
+      <div class="label" style="font-size:.55rem; margin-bottom:0;">Viabilidade</div>
+      <p style="font-size:.78rem; margin:0;">Tempo de trânsito calibrado entre endereços consecutivos</p>
+    </div>
+  </div>
+
+  <div class="quote">
+    Minimizamos suposições arbitrárias e calibramos o modelo com dados históricos. Aprendemos o que elas realmente fazem, a partir dos dados da própria operação.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- PERFIS -->
+<!-- ═══════════════════════════════════════ -->
+<section id="perfis">
+  <div class="label">Perfis comportamentais</div>
+  <h2>Cada especialista tem uma<br>impressão digital operacional.</h2>
+
+  <p>
+    A partir dos dados históricos da operação, construímos um perfil
+    para cada uma das 449 especialistas ativas (412 no período de teste,
+    com perfis treinados apenas em Jan–Fev). Sem pesquisas —
+    calibrado a partir do que elas realmente fizeram.
+  </p>
+
+  <div class="card-grid">
+    <div class="icon-card">
+      <div class="ic-icon">◎</div>
+      <h3 style="margin:0;">Onde atende</h3>
+      <p style="font-size:.85rem;">
+        Centroide operacional derivado dos atendimentos passados — aproxima
+        de onde ela inicia o dia. Raio de cobertura individual (percentil 90 do histórico).
+        <a href="#premissas" style="color:var(--green); text-decoration:none; border-bottom:1px dotted var(--green); font-size:.75rem;">Ver premissa "Centroide operacional".</a>
+      </p>
+    </div>
+    <div class="icon-card">
+      <div class="ic-icon">◷</div>
+      <h3 style="margin:0;">Quando atende</h3>
+      <p style="font-size:.85rem;">
+        Grade de disponibilidade por dia da semana. Se ela trabalha terças das 9h às 15h
+        mas quintas das 13h às 19h, respeitamos essa diferença.
+        <a href="#premissas" style="color:var(--green); text-decoration:none; border-bottom:1px dotted var(--green); font-size:.75rem;">Ver premissa "Grade de disponibilidade".</a>
+      </p>
+    </div>
+    <div class="icon-card">
+      <div class="ic-icon">▤</div>
+      <h3 style="margin:0;">Quanto atende</h3>
+      <p style="font-size:.85rem;">
+        Limites de pedidos/dia e minutos/dia baseados no histórico.
+        Uma especialista que faz 3 pedidos/dia não recebe 6.
+        <a href="#premissas" style="color:var(--green); text-decoration:none; border-bottom:1px dotted var(--green); font-size:.75rem;">Ver premissa "Limites de capacidade".</a>
+      </p>
+    </div>
+    <div class="icon-card">
+      <div class="ic-icon">⚙</div>
+      <h3 style="margin:0;">O que faz</h3>
+      <p style="font-size:.85rem;">
+        Matching exato de certificações — 53 serviços distintos.
+        Cada especialista atende apenas o que já demonstrou atender.
+        <a href="#premissas" style="color:var(--green); text-decoration:none; border-bottom:1px dotted var(--green); font-size:.75rem;">Ver premissa "Certificações e serviços".</a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- NA PRÁTICA -->
+<!-- ═══════════════════════════════════════ -->
+<section id="pratica">
+  <div class="label">Na prática — uma especialista real</div>
+  <h2>Conheça a Especialista #1701.</h2>
+
+  <p>
+    Uma profissional ativa em SP. 51 dias trabalhados no período,
+    129 atendimentos. Especializada em três tipos de serviço de alta frequência.
+  </p>
+
+  <div class="side-by-side" style="margin-top:1.5rem;">
+    <!-- Schedule heatmap -->
+    <div>
+      <div class="label" style="margin-bottom:.75rem;">Quando ela trabalha (atendimentos por horário)</div>
+      <div class="sched-grid">
+        <!-- Header row -->
+        <div class="sched-header"></div>
+        <div class="sched-header">SEG</div><div class="sched-header">TER</div><div class="sched-header">QUA</div>
+        <div class="sched-header">QUI</div><div class="sched-header">SEX</div><div class="sched-header">SAB</div>
+        <div class="sched-header">DOM</div>
+        <!-- 07h --><div class="sched-label">07</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.50)">5</div><div class="sched-cell"></div><div class="sched-cell"></div>
+        <!-- 08h --><div class="sched-label">08</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.30)">3</div><div class="sched-cell" style="background:rgba(90,158,114,.30)">3</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell"></div><div class="sched-cell"></div>
+        <!-- 09h --><div class="sched-label">09</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.30)">3</div><div class="sched-cell" style="background:rgba(90,158,114,.40)">4</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.40)">4</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell"></div>
+        <!-- 10h --><div class="sched-label">10</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.50)">5</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell"></div>
+        <!-- 11h --><div class="sched-label">11</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.70)">7</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell"></div><div class="sched-cell"></div>
+        <!-- 12h --><div class="sched-label">12</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.40)">4</div><div class="sched-cell"></div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell"></div>
+        <!-- 13h --><div class="sched-label">13</div>
+        <div class="sched-cell"></div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.40)">4</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.30)">3</div><div class="sched-cell"></div><div class="sched-cell"></div>
+        <!-- 14h --><div class="sched-label">14</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.30)">3</div><div class="sched-cell" style="background:rgba(90,158,114,.30)">3</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.30)">3</div><div class="sched-cell"></div><div class="sched-cell"></div>
+        <!-- 15h --><div class="sched-label">15</div>
+        <div class="sched-cell"></div><div class="sched-cell" style="background:rgba(90,158,114,.30)">3</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.40)">4</div><div class="sched-cell"></div><div class="sched-cell"></div>
+        <!-- 16h --><div class="sched-label">16</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.50)">5</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell"></div><div class="sched-cell"></div>
+        <!-- 17h --><div class="sched-label">17</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell" style="background:rgba(90,158,114,.22)">2</div><div class="sched-cell"></div><div class="sched-cell"></div>
+        <!-- 18h --><div class="sched-label">18</div>
+        <div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell"></div><div class="sched-cell"></div><div class="sched-cell"></div><div class="sched-cell" style="background:rgba(90,158,114,.15)">1</div><div class="sched-cell"></div><div class="sched-cell"></div>
+      </div>
+      <p style="font-size:.65rem; color:var(--text-dim); font-family:var(--mono); margin-top:.5rem;">
+        Mais ativa Qua e Sex. Quase nunca trabalha sábados. Horário: 7h–18h.
+      </p>
+    </div>
+
+    <!-- Coverage map -->
+    <div>
+      <div class="label" style="margin-bottom:.75rem;">Onde ela atende (129 atendimentos históricos)</div>
+      <div id="map-spec" class="map-container" style="height:320px;"></div>
+      <div class="map-legend" style="margin-top:.5rem;">
+        <div class="map-legend-item"><span class="legend-dot" style="background:rgba(255,255,255,.35);"></span> Atendimento histórico</div>
+        <div class="map-legend-item"><span class="legend-dot dashed"></span> Centroide operacional</div>
+        <div class="map-legend-item"><span class="legend-dot" style="background:#fff;"></span> Rota baseline (23 Jan)</div>
+        <div class="map-legend-item"><span class="legend-dot" style="background:var(--green);"></span> Rota otimizada (23 Jan)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rule"></div>
+
+  <h3>Seu dia 23 de Janeiro — antes e depois</h3>
+  <p style="font-size:.88rem;">
+    No baseline, a especialista percorre 5 bairros diferentes em ziguezague.
+    No plano otimizado, os mesmos 5 pedidos ficam concentrados em um raio compacto —
+    ela termina antes das 13h ao invés de 17h.
+  </p>
+
+  <div class="side-by-side">
+    <div class="data-panel">
+      <div class="panel-label">Baseline — 23 Jan 2026</div>
+      <div class="row"><span class="time">08:30</span><span class="place">Atendimento &mdash; Brooklin</span><span class="km"></span></div>
+      <div class="row"><span class="time">10:30</span><span class="place">Atendimento &mdash; Morumbi</span><span class="km">3,2 km</span></div>
+      <div class="row"><span class="time">12:30</span><span class="place">Atendimento &mdash; V. Olímpia</span><span class="km">6,3 km</span></div>
+      <div class="row"><span class="time">14:30</span><span class="place">Atendimento &mdash; Itaim Bibi</span><span class="km">3,5 km</span></div>
+      <div class="row"><span class="time">16:00</span><span class="place">Atendimento &mdash; Campo Belo</span><span class="km">5,0 km</span></div>
+      <div class="summary">
+        <strong>5</strong> pedidos &middot; <strong>5</strong> bairros &middot; <span class="hl-red"><strong>18,1 km</strong></span> de deslocamento
+      </div>
+    </div>
+    <div class="data-panel hl">
+      <div class="panel-label">Otimizado — 23 Jan 2026</div>
+      <div class="row"><span class="time">07:30</span><span class="place">Atendimento &mdash; Brooklin</span><span class="km"></span></div>
+      <div class="row"><span class="time">08:30</span><span class="place">Atendimento &mdash; Brooklin</span><span class="km">0,4 km</span></div>
+      <div class="row"><span class="time">09:30</span><span class="place">Pés e Mãos &mdash; Brooklin</span><span class="km">1,7 km</span></div>
+      <div class="row"><span class="time">11:00</span><span class="place">Atendimento &mdash; Brooklin</span><span class="km">1,0 km</span></div>
+      <div class="row"><span class="time">12:15</span><span class="place">Pés e Mãos &mdash; Brooklin</span><span class="km">1,8 km</span></div>
+      <div class="summary">
+        <strong>5</strong> pedidos &middot; <strong>1</strong> bairro &middot; <span class="hl"><strong>4,9 km</strong> &minus;73%</span>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size:.72rem; color:var(--text-dim); font-family:var(--mono);">
+    Dados reais do backtest. Especialista anonimizada. Bairros derivados das coordenadas.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- METODOLOGIA (moved before Resultados) -->
+<!-- ═══════════════════════════════════════ -->
+<section id="metodologia" class="compact">
+  <div class="label">Metodologia</div>
+  <h2>Como validamos os resultados.</h2>
+
+  <p>
+    É fácil construir um modelo que funciona bem nos dados que ele já viu.
+    Deliberadamente dificultamos o teste.
+  </p>
+
+  <div class="card">
+    <div class="label" style="margin-bottom:1rem;">Divisão treino / teste</div>
+    <div style="display:flex; gap:2rem; flex-wrap:wrap; align-items:center;">
+      <div>
+        <div style="font-size:.65rem; letter-spacing:2px; text-transform:uppercase; color:var(--text-dim); font-weight:600; margin-bottom:.25rem;">Treino</div>
+        <div style="font-size:1.1rem; font-weight:700; color:var(--heading);">1 Jan – 28 Fev</div>
+        <div style="font-size:.8rem; color:var(--text-dim);">59 dias — usados para construir os perfis</div>
+      </div>
+      <div style="font-family:var(--mono); font-size:1.2rem; color:var(--text-dim);">→</div>
+      <div>
+        <div style="font-size:.65rem; letter-spacing:2px; text-transform:uppercase; color:var(--heading); font-weight:600; margin-bottom:.25rem;">Teste</div>
+        <div style="font-size:1.1rem; font-weight:700; color:var(--heading);">1 Mar – 5 Abr</div>
+        <div style="font-size:.8rem; color:var(--text-dim);">36 dias, 11.296 pedidos — avaliação</div>
+      </div>
+    </div>
+    <p style="font-size:.88rem; margin-top:1.25rem;">
+      O otimizador <strong style="color:var(--heading);">nunca viu</strong> os dados de março e abril quando
+      construiu os perfis. Todos os resultados na seção seguinte vêm exclusivamente
+      desse período de teste.
+    </p>
+  </div>
+
+  <p style="font-size:.85rem; margin-top:1rem;">
+    Das 449 especialistas ativas no período completo, <strong>412 têm histórico suficiente
+    antes do corte</strong> e compõem o pool de teste. As 37 restantes começaram a atender
+    apenas em março ou tinham menos de 2 dias de atividade antes de 1 Mar.
+    Também reportamos os resultados do período completo (95 dias, 449 especialistas)
+    que servem como teto teórico. A diferença entre os dois é de ~0,8pp no DR —
+    moderada, refletindo a escassez de dados por dia da semana no período de treino de 59 dias.
+  </p>
+
+  <div class="card" style="margin-top:1rem; border-color:var(--green-border);">
+    <div class="label" style="margin-bottom:.5rem;">Robustez dos parâmetros</div>
+    <p style="font-size:.85rem;">
+      Testamos <strong>5 configurações diferentes</strong> de limites de capacidade,
+      raio e velocidade de deslocamento. A redução de DR variou entre 79% e 86%
+      em todas as configurações — o resultado não depende de um ajuste fino
+      dos parâmetros, mas da coordenação centralizada em si.
+    </p>
+    <p style="font-size:.72rem; color:var(--text-dim); font-family:var(--mono); margin-top:.5rem;">
+      Configurações testadas: p75–p90 para capacidade, p50–p75 para minutos,
+      p75–p90 para raio, 10–12 km/h para velocidade de transporte.
+      Detalhes na tabela de sensibilidade disponível sob demanda.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- RESULTADOS -->
+<!-- ═══════════════════════════════════════ -->
+<section id="resultados">
+  <div class="label">Resultados — período de teste</div>
+  <h2>O que os números dizem.</h2>
+
+  <p style="font-size:.82rem; color:var(--text-dim); font-family:var(--mono); margin-bottom:.5rem;">
+    36 dias &middot; 11.296 pedidos &middot; Perfis construídos apenas com Jan–Fev
+  </p>
+
+  <!-- Hero -->
+  <div style="margin:2.5rem 0;">
+    <div style="font-size:.82rem; color:var(--text-dim); margin-bottom:.25rem;">Demanda reprimida (DR)</div>
+    <div class="hero-number">
+      <span class="from">10,6%</span>
+      <span class="arrow"> &rarr; </span>
+      2,2%
+    </div>
+    <div style="font-size:.88rem; color:var(--text-dim); margin-top:.5rem;">
+      De 1 em cada 10 pedidos perdidos &mdash; para 1 em cada 45.
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="metric-card hl">
+      <div class="value">&minus;79%</div>
+      <div class="desc">redução na<br>demanda reprimida</div>
+    </div>
+    <div class="metric-card">
+      <div class="value">&minus;19%</div>
+      <div class="desc">deslocamento total<br>das especialistas</div>
+    </div>
+    <div class="metric-card">
+      <div class="value">&minus;26%</div>
+      <div class="desc">km por pedido<br>1,97 &rarr; 1,46</div>
+    </div>
+    <div class="metric-card">
+      <div class="value">+21%</div>
+      <div class="desc">pedidos por especialista<br>no período completo*</div>
+    </div>
+  </div>
+
+  <!-- Waterfall -->
+  <div class="card" style="margin-top:2rem;">
+    <h3>Para onde vão os 11.296 pedidos</h3>
+    <div class="waterfall-row">
+      <div class="wf-stack">
+        <div class="wf-label">Baseline</div>
+        <div class="wf-served" style="height:160px;"><div class="num">10.102</div><div class="lbl">atendidos</div></div>
+        <div class="wf-dr" style="height:22px;"><div class="num">1.194 DR</div></div>
+      </div>
+      <div style="font-family:var(--mono); font-size:1.5rem; color:var(--text-dim); padding-bottom:40px;">→</div>
+      <div class="wf-stack">
+        <div class="wf-label">Otimizado</div>
+        <div class="wf-served" style="height:175px; border-color:var(--green-border);"><div class="num">11.048</div><div class="lbl">atendidos</div></div>
+        <div class="wf-dr" style="height:7px; border-color:var(--red-border);"></div>
+        <div style="font-size:.65rem; color:var(--red); margin-top:2px;">248 DR</div>
+      </div>
+      <div style="padding-bottom:20px; font-size:.85rem; line-height:2; max-width:300px;">
+        <div><span class="hl">+946</span> pedidos adicionais atendidos</div>
+        <div>DR: <span class="hl-red">1.194</span> → <span class="hl">248</span></div>
+        <div>Redução de <span class="hl">79%</span> na demanda reprimida</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rule"></div>
+
+  <!-- Financial impact -->
+  <h3>Quantificando o impacto</h3>
+  <p style="font-size:.88rem;">
+    Cada pedido não atendido é demanda que existia — a cliente agendou, se organizou
+    e a plataforma não conseguiu servir. Recuperar esses pedidos é receita direta.
+  </p>
+
+  <div class="card" style="overflow:auto; padding:0;">
+    <table class="spec-table">
+      <thead><tr><th style="width:55%;">Métrica</th><th>Valor</th></tr></thead>
+      <tbody>
+        <tr><td>Clientes recuperados / mês</td><td style="font-weight:600;">~790 que deixam de ser recusados</td></tr>
+        <tr><td>GMV recuperado / ano</td><td style="color:var(--green); font-weight:600;">~R$ 1,1M</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:.72rem; color:var(--text-dim); font-family:var(--mono);">
+    Premissas: ticket médio R$112 (derivado dos dados — média do valorOriginal de 37.615 pedidos, Jan–Abr 2026).
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- VISÃO GERAL -->
+<!-- ═══════════════════════════════════════ -->
+<section class="compact" style="min-height:auto; padding-top:2rem;">
+  <div class="label">Visão geral — período de teste (36 dias, out-of-sample)</div>
+  <h2>Resumo dos resultados.</h2>
+  <div class="card" style="overflow:auto; padding:0;">
+    <table class="summary-table">
+      <thead>
+        <tr>
+          <th>Métrica</th>
+          <th>Baseline</th>
+          <th>Otimizado</th>
+          <th>Δ</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Pedidos atendidos</td>
+          <td>10.102</td>
+          <td style="color:var(--heading); font-weight:600;">11.048</td>
+          <td style="color:var(--green);">+946</td>
+        </tr>
+        <tr>
+          <td>Demanda reprimida</td>
+          <td>1.194</td>
+          <td style="color:var(--heading); font-weight:600;">248</td>
+          <td style="color:var(--green);">−79%</td>
+        </tr>
+        <tr>
+          <td>Taxa de DR</td>
+          <td>10,6%</td>
+          <td style="color:var(--heading); font-weight:600;">2,2%</td>
+          <td style="color:var(--green);">−79% rel</td>
+        </tr>
+        <tr>
+          <td>Recaptura</td>
+          <td>—</td>
+          <td style="color:var(--heading); font-weight:600;">95,3%</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td>Deslocamento total (km)</td>
+          <td>19.929</td>
+          <td style="color:var(--heading); font-weight:600;">16.084</td>
+          <td style="color:var(--green);">−19,3%</td>
+        </tr>
+        <tr>
+          <td>km / pedido</td>
+          <td>1,97</td>
+          <td style="color:var(--heading); font-weight:600;">1,46</td>
+          <td style="color:var(--green);">−26%</td>
+        </tr>
+        <tr>
+          <td>Pedidos / especialista*</td>
+          <td>60,2</td>
+          <td style="color:var(--heading); font-weight:600;">72,9</td>
+          <td style="color:var(--green);">+21%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:.72rem; color:var(--text-dim); font-family:var(--mono); margin-top:.75rem;">
+    Perfis treinados com Jan–Fev. Teste: 1 Mar – 5 Abr 2026 (36 dias, 11.296 pedidos).
+    *Pedidos por especialista calculado sobre o período completo (95 dias, 30.026 pedidos).
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- DISTRIBUIÇÃO DE CARGA — período completo -->
+<!-- ═══════════════════════════════════════ -->
+<section class="compact" style="min-height:auto; padding-top:2rem;">
+  <div class="label">Distribuição de carga — período completo (95 dias, 30.026 pedidos)</div>
+  <h3 style="margin-top:0;">Especialistas atendem mais, sem sobrecarga</h3>
+  <p style="font-size:.85rem; margin-bottom:1rem;">
+    O otimizador distribui os pedidos recuperados entre as especialistas existentes.
+    No período completo (informação perfeita), cada especialista atende em média <strong style="color:var(--heading);">21% mais pedidos</strong>
+    (60,2 → 72,9 pedidos no período) — sem ultrapassar seus limites individuais.
+  </p>
+  <p style="font-size:.72rem; color:var(--text-dim); font-family:var(--mono); margin-bottom:1rem;">
+    Esta seção usa dados do período completo (teto teórico) para ter amostra
+    suficiente por quartil. Os resultados do período de teste (36 dias) seguem
+    a mesma distribuição.
+  </p>
+
+  <div class="card-grid" style="grid-template-columns:repeat(2,1fr);">
+    <div class="metric-card">
+      <div class="value" style="font-size:2rem;">60,2 → 72,9</div>
+      <div class="desc">pedidos por especialista<br>(média no período)</div>
+    </div>
+    <div class="metric-card">
+      <div class="value" style="font-size:2rem;">51%</div>
+      <div class="desc">das especialistas<br>recebem mais pedidos</div>
+    </div>
+  </div>
+
+  <div class="card" style="overflow:auto; padding:0; margin-top:1.5rem;">
+    <table class="summary-table">
+      <thead><tr><th style="text-align:left;">Perfil</th><th>Pedidos/mês<br><span style="font-size:.5rem; letter-spacing:1px;">BASELINE</span></th><th>Pedidos/mês<br><span style="font-size:.5rem; letter-spacing:1px;">OTIMIZADO</span></th><th>Variação</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Leves (quartil inferior)</td><td>2,9</td>
+          <td style="font-weight:600;">5,2</td>
+          <td style="color:var(--green);">+81%</td>
+        </tr>
+        <tr>
+          <td>Intermediárias</td><td>7,0</td>
+          <td style="font-weight:600;">13,7</td>
+          <td style="color:var(--green);">+96%</td>
+        </tr>
+        <tr>
+          <td>Regulares</td><td>18,3</td>
+          <td style="font-weight:600;">22,9</td>
+          <td style="color:var(--green);">+25%</td>
+        </tr>
+        <tr>
+          <td>Mais ativas (quartil superior)</td><td>47,9</td>
+          <td style="font-weight:600;">42,5</td>
+          <td style="color:var(--text-dim);">−11%</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:.85rem; margin-top:1rem;">
+    As especialistas mais ativas têm sua carga agendada reduzida em 11% — desafogando
+    exatamente as profissionais que hoje são acionadas manualmente para cobrir demanda
+    reprimida. Com uma agenda mais leve, elas têm mais disponibilidade para
+    absorver pedidos de última hora.
+  </p>
+
+  <p style="font-size:.72rem; color:var(--text-dim); font-family:var(--mono); margin-top:.75rem;">
+    Período completo: 95 dias, 30.026 pedidos, 449 especialistas. A capacidade não é o gargalo —
+    a restrição dominante é geográfica (proximidade + alinhamento de horários).
+    Os pedidos recuperados não são distantes: 52% estão a menos de 3 km da especialista alocada.
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- PREMISSAS -->
+<!-- ═══════════════════════════════════════ -->
+<section id="premissas" class="compact">
+  <div class="label">Premissas do modelo</div>
+  <h2>Parâmetros e regras.</h2>
+  <p>Minimizamos suposições arbitrárias. Todos os parâmetros são calibrados a partir dos dados históricos da operação.</p>
+
+  <details>
+    <summary>Modelo de deslocamento</summary>
+    <div class="detail-body">
+      <strong>Transporte público — 10 km/h (haversine).</strong> Velocidade porta-a-porta conservadora para transporte público em São Paulo. Referências:<br>
+      <ul style="margin:.5rem 0 .5rem 1.2rem; font-size:.8rem; line-height:1.5;">
+        <li><strong>SPTrans (Relatório Integrado 2024):</strong> velocidade comercial sistêmica 15–16 km/h — tempo em veículo, sem caminhada ou espera.</li>
+        <li><strong>CET-SP (2014):</strong> 12,1 km/h em vias sem corredor exclusivo — com paradas, sem caminhada ao ponto.</li>
+      </ul>
+      Usamos distância haversine (linha reta), ~1,3× menor que a viária. <strong>10 km/h sobre haversine ≈ 13 km/h em distância real</strong> — compatível com as referências acima e conservador por incluir caminhada e espera.<br><br>
+      <strong>Teste de sensibilidade:</strong> Rodar o backtest com 12 km/h em vez de 10 km/h altera o DR em apenas <strong>0,08pp</strong> (2,20% → 2,12%). Os resultados são robustos à escolha exata de velocidade — o deslocamento não é a restrição dominante.<br><br>
+      <strong>Veículo:</strong> 20 km/h para serviços com equipamento pesado — serviços com equipamento especial.<br><br>
+      <strong>Distância:</strong> Haversine (linha reta). Tanto baseline quanto otimizado usam haversine — a comparação relativa é justa.<br><br>
+      <strong>Mesmo endereço:</strong> Pedidos dentro de 50 m = zero deslocamento. Comum em múltiplos serviços para a mesma cliente ou condomínios.<br><br>
+      <strong>Folga de transição:</strong> 15 minutos por transição, limitada a 3 por dia. Cobre arrumação, subir/descer e imprevistos. Descontada do tempo disponível — não é "grátis". O limite de 3 evita empilhamento artificial.
+    </div>
+  </details>
+
+  <details>
+    <summary>Grade de disponibilidade</summary>
+    <div class="detail-body">
+      Para cada especialista, construímos uma <strong>grade de disponibilidade por dia da semana</strong>. Uma hora é considerada "disponível" se a especialista teve atividade naquele horário em pelo menos <strong>20%</strong> das ocorrências daquele dia da semana no histórico.<br><br>
+      <strong>Exemplo:</strong> Se a especialista trabalhou 14 quintas-feiras e esteve ativa entre 14h–15h em 8 delas (57%), esse horário é disponível na quinta. Se esteve ativa 13h–14h em apenas 1 quinta (7%), esse horário é bloqueado.<br><br>
+      <strong>Mínimo de evidência:</strong> A grade por dia da semana requer pelo menos <strong>2 instâncias</strong> daquele dia no histórico. Com 2 instâncias, o limiar de 20% torna-se efetivamente 50% (a especialista precisa ter trabalhado naquela hora em pelo menos 1 das 2 ocorrências).<br><br>
+      <strong>Exclusão por ausência:</strong> Especialistas que <strong>nunca trabalharam</strong> em um determinado dia da semana são excluídas das alocações nesse dia. Isso elimina alocações especulativas sem qualquer evidência direta.<br><br>
+      <strong>Fallback:</strong> Quando há apenas 1 ocorrência de um dia da semana, usamos a média do segmento (dia útil ou fim de semana) como proxy. Na prática, <strong>88% das alocações</strong> usam evidência direta do dia da semana, e <strong>56% têm disponibilidade horária de 40% ou mais</strong> — indicando alta confiança.
+    </div>
+  </details>
+
+  <details>
+    <summary>Centroide operacional ("onde ela atende")</summary>
+    <div class="detail-body">
+      Não sabemos onde as especialistas moram. Em vez de perguntar, <strong>derivamos um ponto de referência geográfico</strong> a partir dos próprios atendimentos — o centroide operacional.<br><br>
+      <strong>Cálculo:</strong> Média ponderada de três componentes: <strong>50%</strong> de todos os locais de atendimento, <strong>30%</strong> do primeiro atendimento de cada semana, e <strong>20%</strong> do primeiro atendimento de cada dia. O peso extra nos primeiros atendimentos do dia aproxima o centroide de onde ela inicia a jornada — mais próximo de casa do que atendimentos aleatórios do meio do dia.<br><br>
+      <strong>Uso:</strong> O centroide é a âncora para medir raio de cobertura e deslocamento. Tanto o baseline quanto o otimizado usam o mesmo centroide, garantindo que a comparação é justa.<br><br>
+      <strong>Por que não perguntar diretamente?</strong> Porque o padrão revelado dos dados é mais robusto do que declarações. Uma especialista pode informar um endereço desatualizado ou diferente de onde realmente opera. O centroide reflete o comportamento real.
+    </div>
+  </details>
+
+  <details>
+    <summary>Certificações e serviços</summary>
+    <div class="detail-body">
+      O matching de serviços é <strong>exato</strong>: uma especialista só recebe pedidos de serviços que ela já realizou no histórico. São <strong>53 tipos de serviço</strong> distintos, diversos.<br><br>
+      Não assumimos que uma especialista pode fazer um serviço novo. Se ela nunca realizou um determinado serviço, ela não recebe pedidos desse tipo — mesmo que esteja disponível e próxima.
+    </div>
+  </details>
+
+  <details>
+    <summary>Limites de capacidade</summary>
+    <div class="detail-body">
+      <strong>Máximo de pedidos/dia:</strong> Percentil 75 do histórico individual de pedidos diários, com piso de 2. "Ela dá conta desse volume em 3 de cada 4 dias." O piso evita limitar especialistas leves a 1 pedido/dia.<br><br>
+      <strong>Máximo de minutos/dia:</strong> Percentil 50 (mediana) do total de minutos diários × 1,25 buffer. "Seu dia típico, com 25% de margem."<br><br>
+      <strong>Raio geográfico:</strong> Percentil 90 da distância máxima diária ao centroide operacional. Um raio mais amplo dá ao otimizador mais candidatas por pedido — e, contraintuitivamente, <em>reduz</em> o deslocamento porque permite melhor empacotamento geográfico.<br><br>
+      <strong>Utilização típica:</strong> 66% dos dias-especialista têm folga em ambas as dimensões (pedidos e minutos). A capacidade não é o gargalo — a restrição dominante é geográfica (raio + alinhamento de horários).<br><br>
+      Esses limites são <em>comportamentais</em>, não teóricos. Não pedimos para ninguém fazer mais do que já faz.
+    </div>
+  </details>
+
+  <details>
+    <summary>Definição de baseline</summary>
+    <div class="detail-body">
+      O baseline é <strong>o que realmente aconteceu</strong> — os atendimentos e demanda reprimida reais registrados no sistema da plataforma. Não é uma simulação do processo atual; são os dados reais.<br><br>
+      <strong>Pedidos finalizados:</strong> Aqueles com status "Agendamento finalizado" — a especialista aceitou, se deslocou e realizou o serviço.<br><br>
+      <strong>Pedidos não atendidos (DR):</strong> Aqueles com status "Nenhuma especialista aceitou o agendamento" — demanda real que não encontrou oferta.
+    </div>
+  </details>
+
+  <details>
+    <summary>Filtro de recência</summary>
+    <div class="detail-body">
+      Especialistas sem atividade nos últimos <strong>30 dias</strong> são excluídas do pool de candidatas. Isso previne alocações para especialistas que podem ter saído da plataforma, entrado em licença ou mudado de região.<br><br>
+      449 especialistas passam esse filtro no período completo. No teste com perfis treinados em Jan–Fev, 412 estão disponíveis (37 começaram a atender apenas em março ou tinham histórico insuficiente antes do corte).
+    </div>
+  </details>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- CAPACIDADE LATENTE (TEASER) -->
+<!-- ═══════════════════════════════════════ -->
+<section class="compact" style="min-height:auto; padding-top:1rem;">
+  <div class="label">Além da alocação</div>
+  <h2>Onde está a capacidade latente?</h2>
+  <p style="margin-bottom:1.2rem;">
+    Mesmo com limites conservadores, o pool atual tem <strong>~2.500 slots de pedidos não utilizados por mês</strong>.
+    A maior parte dessa folga está concentrada em especialistas com raio de atuação restrito —
+    profissionais que historicamente atenderam em áreas pequenas, mas que não necessariamente
+    estão limitadas a elas.
+  </p>
+  <div class="metrics-grid" style="grid-template-columns:repeat(3,1fr);">
+    <div class="card" style="text-align:center;">
+      <div style="font-size:2rem; font-weight:700; color:var(--heading);">2.549</div>
+      <div style="font-size:.75rem; color:var(--text-dim); margin-top:.3rem;">slots não utilizados / mês</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:2rem; font-weight:700; color:var(--heading);">66%</div>
+      <div style="font-size:.75rem; color:var(--text-dim); margin-top:.3rem;">utilização do grupo de raio curto<br>(vs 78% raio amplo)</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:2rem; font-weight:700; color:var(--green);">~640</div>
+      <div style="font-size:.75rem; color:var(--text-dim); margin-top:.3rem;">pedidos adicionais / mês<br>(se 25% da folga for preenchida)</div>
+    </div>
+  </div>
+  <p style="font-size:.85rem; margin-top:1rem;">
+    A restrição é <em>comportamental</em>, não de capacidade: o raio reflete onde ela <em>atendeu</em>,
+    não onde ela <em>pode</em> atender. Incentivos direcionados — como bonificação por deslocamento
+    ou visibilidade de demanda próxima — podem expandir a cobertura dessas especialistas
+    e desbloquear volume incremental significativo.
+  </p>
+  <p style="font-size:.72rem; color:var(--text-dim); font-family:var(--mono); margin-top:.75rem;">
+    Raio curto: especialistas com raio de cobertura ≤ p25 do pool (≈ 3,2 km).
+    Análise com limites atuais (p75 pedidos, p50 minutos, p90 raio).
+  </p>
+</section>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- PRÓXIMOS PASSOS -->
+<!-- ═══════════════════════════════════════ -->
+<section id="proximos">
+  <div class="label">Caminho adiante</div>
+  <h2>Próximos passos.</h2>
+
+  <div class="step-grid">
+    <div class="step-num" style="border-color:var(--green-border); color:var(--green);">01</div>
+    <div>
+      <h3>Validação de disponibilidade</h3>
+      <p style="font-size:.88rem;">
+        Especialistas informam suas disponibilidades reais pelo app.
+        Cruzamos com as grades de disponibilidade que inferimos dos dados —
+        isso valida o modelo e melhora a precisão dos perfis simultaneamente.
+      </p>
+    </div>
+    <div class="step-num" style="border-color:var(--green-border); color:var(--green);">02</div>
+    <div>
+      <h3>Piloto com sugestões direcionadas</h3>
+      <p style="font-size:.88rem;">
+        Grupo controlado de especialistas recebe sugestões personalizadas:
+        <em>"os 3 melhores pedidos para você neste horário"</em> — baseado
+        no output do otimizador. A especialista continua com acesso ao pool
+        completo, mas ganha uma camada de recomendação que reduz o esforço
+        de busca e melhora a coordenação. Medimos taxa de aceite das
+        sugestões e impacto no DR do grupo.
+      </p>
+    </div>
+    <div class="step-num">03</div>
+    <div>
+      <h3>Integração de dados ao vivo</h3>
+      <p style="font-size:.88rem;">
+        Pipeline em tempo real: a operação envia o pool de pedidos,
+        Op-Era devolve sugestões otimizadas. Dashboard de performance
+        acompanhando sugestões vs. realidade, DR projetado vs. real,
+        e evolução temporal.
+      </p>
+    </div>
+    <div class="step-num">04</div>
+    <div>
+      <h3>Otimização incremental intraday</h3>
+      <p style="font-size:.88rem;">
+        A análise de lead time (ver Metodologia) mostra que 18% dos pedidos
+        chegam após as 07h do dia do serviço. Esses pedidos exigem uma camada
+        de otimização em tempo real que reotimiza à medida que novos pedidos entram,
+        capturando a demanda de última hora que o batch noturno não alcança.
+      </p>
+    </div>
+    <div class="step-num">05</div>
+    <div>
+      <h3>Diagnóstico de potencial por especialista</h3>
+      <p style="font-size:.88rem;">
+        Identificar clusters de especialistas com perfis semelhantes mas
+        utilização divergente — e quantificar o potencial latente em cada
+        grupo. Base para incentivos direcionados, sugestões personalizadas
+        e ativação de capacidade ociosa.
+      </p>
+    </div>
+  </div>
+
+  <div class="terminal-flow" style="margin-top:2rem;">
+    <div class="term-box">
+      <div class="term-head"><span class="ico">☻</span> ESPECIALISTA</div>
+      <div class="term-line">informa disponibilidade</div>
+      <div class="term-line">acessa pool + sugestões</div>
+    </div>
+    <div class="term-connector">──▸</div>
+    <div class="term-box">
+      <div class="term-head"><span class="ico">◈</span> OP-ERA</div>
+      <div class="term-line">cruza perfis + pedidos</div>
+      <div class="term-line">gera top 3 por especialista</div>
+    </div>
+    <div class="term-connector">──▸</div>
+    <div class="term-box">
+      <div class="term-head"><span class="ico">▤</span> DASHBOARD</div>
+      <div class="term-line">aceite vs. sugerido</div>
+      <div class="term-line">DR real vs. projetado</div>
+    </div>
+  </div>
+
+  <div class="quote">
+    O backtest mostra o que é possível. O piloto mostra o que é real.
+  </div>
+</section>
+
+<footer>
+  Op-Era &middot; Análise de backtest sobre dados reais — Operação de serviços a domicílio, SP (Jan–Abr 2026)<br>
+  Confidencial — Op-Era
+</footer>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- SCRIPTS -->
+<!-- ═══════════════════════════════════════ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── Map data ──
+const mapOrders = [
+[-23.5191,-46.7284,1],[-23.6367,-46.6901,0],[-23.6045,-46.6813,1],[-23.5436,-46.6758,1],[-23.5383,-46.6794,1],[-23.6051,-46.6841,1],[-23.5083,-46.6296,1],[-23.6351,-46.6688,1],[-23.4946,-46.8341,0],[-23.5338,-46.7104,1],[-23.549,-46.6646,1],[-23.582,-46.6407,1],[-23.5471,-46.6948,1],[-23.5618,-46.6616,1],[-23.51,-46.6908,1],[-23.5866,-46.6537,1],[-23.6041,-46.6147,1],[-23.5863,-46.6805,1],[-23.5414,-46.6695,1],[-23.5497,-46.6278,1],[-23.5713,-46.6912,1],[-23.6382,-46.7679,0],[-23.5564,-46.6814,1],[-23.6355,-46.7471,1],[-23.6141,-46.7436,0],[-23.5986,-46.6627,0],[-23.5476,-46.6681,1],[-23.6478,-46.6886,1],[-23.6366,-46.6817,1],[-23.615,-46.6359,1],[-23.5403,-46.6791,1],[-23.623,-46.7141,1],[-23.5487,-46.67,1],[-23.4964,-46.563,1],[-23.6162,-46.6524,0],[-23.4727,-46.5019,1],[-23.5727,-46.6902,1],[-23.5268,-46.68,1],[-23.5333,-46.6912,1],[-23.5545,-46.6001,1],[-23.5764,-46.6273,1],[-23.5633,-46.571,1],[-23.5995,-46.546,1],[-23.5612,-46.6869,1],[-23.5508,-46.5985,1],[-23.5525,-46.6708,1],[-23.565,-46.6334,1],[-23.5795,-46.6073,1],[-23.5277,-46.6566,1],[-23.5019,-46.6516,1],[-23.5698,-46.6391,1],[-23.5368,-46.6889,1],[-23.5987,-46.7139,1],[-23.6459,-46.6946,1],[-23.6323,-46.6738,1],[-23.6003,-46.6799,1],[-23.6212,-46.6904,1],[-23.595,-46.7202,1],[-23.568,-46.6723,1],[-23.5299,-46.6973,1],[-23.5295,-46.6996,1],[-23.5885,-46.6884,1],[-23.6284,-46.6748,1],[-23.6524,-46.6984,1],[-23.5259,-46.6406,1],[-23.5559,-46.6228,1],[-23.5329,-46.6743,1],[-23.6228,-46.6635,1],[-23.6234,-46.6525,1],[-23.5285,-46.6683,1],[-23.5416,-46.6784,1],[-23.6441,-46.6508,1],[-23.6378,-46.6772,1],[-23.5775,-46.6622,1],[-23.5434,-46.666,1],[-23.6037,-46.682,1],[-23.5861,-46.5474,1],[-23.5765,-46.6535,1],[-23.5476,-46.6796,1],[-23.6137,-46.6308,1],[-23.5734,-46.6753,1],[-23.6233,-46.6646,1],[-23.5532,-46.6729,1],[-23.6304,-46.6771,1],[-23.5809,-46.6386,1],[-23.6181,-46.6374,1],[-23.6452,-46.5622,1],[-23.4825,-46.5572,1],[-23.5546,-46.7085,1],[-23.5526,-46.6914,1],[-23.5203,-46.6512,1],[-23.4993,-46.6851,1],[-23.5982,-46.6356,1],[-23.5258,-46.6681,1],[-23.5585,-46.5699,1],[-23.5634,-46.7058,1],[-23.547,-46.6598,1],[-23.5888,-46.6269,1],[-23.6236,-46.5673,1],[-23.5682,-46.6274,1],[-23.5322,-46.663,1],[-23.639,-46.6964,1],[-23.6017,-46.66,1],[-23.5666,-46.69,1],[-23.5463,-46.6316,1],[-23.5273,-46.5097,1],[-23.6394,-46.7222,1],[-23.5844,-46.534,1],[-23.5673,-46.6102,1],[-23.5549,-46.6665,1],[-23.6022,-46.737,1],[-23.6192,-46.7303,1],[-23.5865,-46.6788,1],[-23.5501,-46.5335,1],[-23.5495,-46.5766,1],[-23.6429,-46.6876,1],[-23.6077,-46.6232,1],[-23.5872,-46.6538,1],[-23.5295,-46.6002,1],[-23.5311,-46.6756,1],[-23.5341,-46.6538,1],[-23.5758,-46.5869,1],[-23.6551,-46.5512,1],[-23.6037,-46.6898,1],[-23.5424,-46.6563,1],[-23.5958,-46.6634,1],[-23.6293,-46.6791,1],[-23.5139,-46.6858,1],[-23.6337,-46.66,1],[-23.5759,-46.496,1],[-23.5461,-46.6506,1],[-23.5467,-46.6647,1],[-23.62,-46.7214,1],[-23.6427,-46.6478,1],[-23.4961,-46.6529,1],[-23.5341,-46.6681,1],[-23.5543,-46.6597,1],[-23.5459,-46.5938,1],[-23.5498,-46.6471,1],[-23.6405,-46.6355,1],[-23.5199,-46.6659,1],[-23.5179,-46.6665,1],[-23.6343,-46.6756,1],[-23.5095,-46.6734,1],[-23.4882,-46.6844,1],[-23.5023,-46.6795,1],[-23.5588,-46.6675,1],[-23.5541,-46.6602,1],[-23.4832,-46.6139,1],[-23.6022,-46.7029,1],[-23.556,-46.6501,1],[-23.5294,-46.6678,1],[-23.5712,-46.694,1],[-23.6287,-46.6674,1],[-23.5542,-46.6487,1],[-23.5411,-46.6907,1],[-23.5444,-46.5952,1],[-23.5616,-46.599,1],[-23.6336,-46.7157,1],[-23.616,-46.6176,1],[-23.6003,-46.6632,1],[-23.6359,-46.6627,1],[-23.572,-46.6719,1],[-23.5529,-46.6375,0],[-23.5272,-46.691,1],[-23.6146,-46.6834,1],[-23.5099,-46.6576,1],[-23.5889,-46.6382,1],[-23.5809,-46.6827,1],[-23.5541,-46.6976,1],[-23.5896,-46.6398,1],[-23.6415,-46.6193,1],[-23.4943,-46.6006,1],[-23.519,-46.6696,1],[-23.5783,-46.684,1],[-23.5307,-46.6467,1],[-23.4885,-46.7621,0],[-23.5936,-46.6933,1],[-23.595,-46.6722,1],[-23.6616,-46.7087,1],[-23.5307,-46.7129,1],[-23.5929,-46.6485,1],[-23.6335,-46.7172,0],[-23.5898,-46.6352,1],[-23.5796,-46.6118,0],[-23.5932,-46.6241,1],[-23.5364,-46.6816,1],[-23.6306,-46.7044,1],[-23.5936,-46.6776,1],[-23.6086,-46.6353,1],[-23.6065,-46.6307,1],[-23.5431,-46.6702,1],[-23.5878,-46.6391,1],[-23.6081,-46.7265,1],[-23.5736,-46.6621,1],[-23.5409,-46.6525,1],[-23.5347,-46.7134,1],[-23.6444,-46.6993,1],[-23.5476,-46.6521,0],[-23.5878,-46.6771,1],[-23.5778,-46.707,1],[-23.5808,-46.6262,1],[-23.6285,-46.6658,1],[-23.6147,-46.6831,1],[-23.5789,-46.6395,1],[-23.5812,-46.6611,1],[-23.5835,-46.6821,1],[-23.6641,-46.7019,0],[-23.7143,-46.5728,1],[-23.5535,-46.6761,1],[-23.5916,-46.6686,1],[-23.6149,-46.6563,1],[-23.513,-46.6983,1],[-23.5293,-46.6995,1],[-23.4888,-46.5745,1],[-23.5839,-46.6907,0],[-23.5659,-46.6812,1],[-23.5907,-46.7019,1],[-23.5772,-46.6471,1],[-23.6372,-46.6588,1],[-23.538,-46.6356,1],[-23.5837,-46.7217,1],[-23.5515,-46.6565,1],[-23.5459,-46.6966,1],[-23.5799,-46.6722,1],[-23.5265,-46.6385,1],[-23.5609,-46.6964,1],[-23.6526,-46.4907,1],[-23.6209,-46.6802,1],[-23.5498,-46.5818,1],[-23.5807,-46.6434,1],[-23.6111,-46.6646,1],[-23.5,-46.6219,0],[-23.5038,-46.6414,1],[-23.6166,-46.7074,1],[-23.5735,-46.6509,1],[-23.6097,-46.6713,1],[-23.6095,-46.6434,1],[-23.5991,-46.6677,1],[-23.5869,-46.6246,1],[-23.5559,-46.7106,1],[-23.5994,-46.6677,1],[-23.514,-46.668,0],[-23.6642,-46.6972,1],[-23.5382,-46.6675,1],[-23.6546,-46.7243,1],[-23.5683,-46.7074,1],[-23.5891,-46.5985,1],[-23.566,-46.674,1],[-23.5976,-46.6422,1],[-23.5973,-46.6893,1],[-23.5535,-46.6877,1],[-23.5839,-46.6458,1],[-23.5668,-46.641,1],[-23.5702,-46.6443,1],[-23.6069,-46.6749,1],[-23.4769,-46.6688,1],[-23.5528,-46.6333,1],[-23.5991,-46.6997,1],[-23.6296,-46.6593,1],[-23.5946,-46.6766,1],[-23.5335,-46.6915,0],[-23.556,-46.6791,1],[-23.5448,-46.6971,0],[-23.6089,-46.7006,1],[-23.5815,-46.6917,1],[-23.5667,-46.7381,1],[-23.5329,-46.6716,1],[-23.5751,-46.6485,1],[-23.5378,-46.7081,1],[-23.5106,-46.6666,1],[-23.5715,-46.6791,1],[-23.562,-46.6711,1],[-23.5435,-46.6511,0],[-23.5021,-46.7138,0],[-23.5416,-46.6494,1],[-23.5514,-46.6687,1],[-23.5695,-46.6305,0],[-23.6013,-46.6145,0],[-23.5367,-46.6983,1],[-23.628,-46.681,1],[-23.6177,-46.6393,0],[-23.5357,-46.6353,1],[-23.6209,-46.65,1],[-23.5428,-46.6796,1],[-23.5911,-46.6798,1],[-23.5712,-46.6296,1],[-23.5948,-46.6687,1],[-23.5925,-46.6753,0],[-23.6337,-46.7241,0],[-23.5396,-46.5123,1],[-23.603,-46.7492,0],[-23.5854,-46.6897,1],[-23.5592,-46.6761,1],[-23.6248,-46.6873,1],[-23.5202,-46.6935,1],[-23.5719,-46.6519,1],[-23.557,-46.6666,1],[-23.5925,-46.6605,0],[-23.6075,-46.6258,1],[-23.607,-46.6623,1]
+];
+
+const specHistory = [
+[-23.6025,-46.6624],[-23.6265,-46.6864],[-23.6065,-46.7113],[-23.5982,-46.6884],[-23.5954,-46.6756],[-23.615,-46.7411],[-23.6054,-46.6645],[-23.5502,-46.6708],[-23.6042,-46.6553],[-23.6139,-46.6801],[-23.6702,-46.7109],[-23.6238,-46.6684],[-23.5972,-46.6885],[-23.6565,-46.6878],[-23.6093,-46.7087],[-23.6169,-46.7331],[-23.6306,-46.668],[-23.6362,-46.7103],[-23.5918,-46.6946],[-23.5444,-46.6705],[-23.5923,-46.6857],[-23.5894,-46.6679],[-23.6121,-46.6665],[-23.6358,-46.7423],[-23.6291,-46.703],[-23.5774,-46.6695],[-23.6195,-46.6888],[-23.6589,-46.7089],[-23.6116,-46.6862],[-23.6442,-46.7094],[-23.5937,-46.6646],[-23.5935,-46.6632],[-23.6161,-46.6746],[-23.5986,-46.6642],[-23.6447,-46.6754],[-23.5809,-46.6594],[-23.6202,-46.6639],[-23.6188,-46.6918],[-23.6282,-46.6967],[-23.6224,-46.7052],[-23.6288,-46.7028],[-23.6726,-46.721],[-23.6236,-46.7526],[-23.6384,-46.7339],[-23.6472,-46.7445],[-23.6225,-46.7177],[-23.5789,-46.6661],[-23.609,-46.6687],[-23.6414,-46.6637],[-23.6551,-46.6908],[-23.613,-46.6921],[-23.6018,-46.6812],[-23.5508,-46.6745],[-23.6066,-46.6987],[-23.5822,-46.6787],[-23.6107,-46.7097],[-23.5789,-46.6856],[-23.6119,-46.7137],[-23.6671,-46.7043],[-23.5961,-46.6361],[-23.5676,-46.6382],[-23.6144,-46.7098],[-23.6319,-46.6837],[-23.6375,-46.7108],[-23.6224,-46.6714],[-23.6451,-46.7194],[-23.6583,-46.7013],[-23.5993,-46.6999],[-23.6014,-46.6784],[-23.6194,-46.6705],[-23.5713,-46.6769],[-23.5911,-46.6837],[-23.5464,-46.6635],[-23.6368,-46.7418],[-23.6538,-46.6828],[-23.5647,-46.6958],[-23.5642,-46.6766],[-23.5639,-46.7044],[-23.6244,-46.697],[-23.6023,-46.6542],[-23.6513,-46.7186],[-23.617,-46.6646],[-23.6314,-46.6996],[-23.6138,-46.6647],[-23.5902,-46.689],[-23.612,-46.6788],[-23.5897,-46.6837],[-23.5881,-46.6569],[-23.6158,-46.6894],[-23.5946,-46.6892],[-23.6204,-46.6705],[-23.568,-46.6521],[-23.6096,-46.7018],[-23.6117,-46.659],[-23.5793,-46.6774],[-23.6335,-46.7063],[-23.631,-46.6747],[-23.5839,-46.6598],[-23.6181,-46.6443],[-23.6097,-46.698],[-23.5891,-46.6535],[-23.6621,-46.7208],[-23.6215,-46.6821],[-23.6098,-46.6898],[-23.6385,-46.7256],[-23.6223,-46.6612],[-23.5961,-46.6942],[-23.6137,-46.7074],[-23.6045,-46.6659],[-23.548,-46.6806],[-23.558,-46.6718],[-23.5527,-46.6578],[-23.6526,-46.6921],[-23.6581,-46.6919],[-23.5885,-46.6711],[-23.5579,-46.6672],[-23.6141,-46.6795],[-23.6032,-46.6748],[-23.6083,-46.6397],[-23.6004,-46.6634],[-23.6083,-46.66],[-23.5849,-46.6691],[-23.6089,-46.6748],[-23.5502,-46.6551],[-23.6081,-46.6945],[-23.6133,-46.6685],[-23.6224,-46.6796],[-23.549,-46.6681],[-23.6391,-46.6706]
+];
+
+const jan23BL = [[-23.6085,-46.6932],[-23.6004,-46.701],[-23.6366,-46.6453],[-23.6015,-46.6906],[-23.6426,-46.7085]];
+const jan23OPT = [[-23.6225,-46.6755],[-23.6366,-46.7077],[-23.598,-46.6719],[-23.6268,-46.6646],[-23.6417,-46.6979]];
+const specCentroid = [-23.621,-46.6948];
+
+// ── SP Overview Map ──
+const tiles = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+const attr = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
+
+const mapSP = L.map('map-sp',{scrollWheelZoom:false}).setView([-23.56,-46.66],11);
+L.tileLayer(tiles,{attribution:attr,maxZoom:18}).addTo(mapSP);
+
+mapOrders.forEach(function(o){
+  const served = o[2]===1;
+  L.circleMarker([o[0],o[1]],{
+    radius: 4,
+    color: served ? 'rgba(255,255,255,.55)' : '#e05555',
+    fillColor: served ? 'rgba(255,255,255,.45)' : '#e05555',
+    fillOpacity: served ? .5 : .85,
+    weight: served ? 0.5 : 1.5
+  }).addTo(mapSP);
+});
+
+// ── Specialist Coverage Map ──
+const mapSpec = L.map('map-spec',{scrollWheelZoom:false}).setView(specCentroid,13);
+L.tileLayer(tiles,{attribution:attr,maxZoom:18}).addTo(mapSpec);
+
+// Historical cloud
+specHistory.forEach(function(c){
+  L.circleMarker(c,{radius:3,color:'rgba(255,255,255,.3)',fillColor:'rgba(255,255,255,.2)',fillOpacity:.4,weight:1}).addTo(mapSpec);
+});
+
+// Centroid
+L.circleMarker(specCentroid,{radius:8,color:'#5a9e72',fillColor:'transparent',fillOpacity:0,weight:2,dashArray:'4 4'}).addTo(mapSpec);
+
+// Jan 23 baseline path (white)
+L.polyline(jan23BL,{color:'rgba(255,255,255,.5)',weight:1.5,dashArray:'4 4'}).addTo(mapSpec);
+jan23BL.forEach(function(c,i){
+  L.marker(c,{icon:L.divIcon({className:'',html:'<div class="route-dot bl">'+(i+1)+'</div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(mapSpec);
+});
+
+// Jan 23 optimized path (green)
+L.polyline(jan23OPT,{color:'#5a9e72',weight:2}).addTo(mapSpec);
+jan23OPT.forEach(function(c,i){
+  L.marker(c,{icon:L.divIcon({className:'',html:'<div class="route-dot opt">'+(i+1)+'</div>',iconSize:[18,18],iconAnchor:[9,9]})}).addTo(mapSpec);
+});
+
+// ── Nav scroll spy ──
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('nav .links a');
+window.addEventListener('scroll', function(){
+  let current = '';
+  sections.forEach(function(s){if(window.scrollY >= s.offsetTop-100) current=s.id;});
+  navLinks.forEach(function(a){a.classList.toggle('active',a.getAttribute('href')==='#'+current);});
+});
+</script>
+
+<style>
+  .route-dot {
+    width:18px; height:18px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:.6rem; font-weight:700; color:#fff;
+    line-height:1;
+  }
+  .route-dot.bl { background:rgba(30,30,30,.9); border:1.5px solid #fff; }
+  .route-dot.opt { background:rgba(20,50,30,.9); border:1.5px solid #5a9e72; }
+</style>
+
+</body>
+</html>
