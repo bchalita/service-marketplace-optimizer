@@ -162,6 +162,25 @@ Additionally: results were stress-tested across multiple speed factor configurat
 
 ---
 
+## Computational Performance
+
+The full pipeline (Stage 0 → 1 → 2 → 3) runs on a single day's orders in under 1 second on commodity hardware:
+
+| Day Size | Greedy (S2) | Local Search (S3) | Total | Moves Applied |
+|----------|-------------|-------------------|-------|---------------|
+| 220 orders, 108 providers | ~instant | 0.4s | < 1s | 68 relocate + 87 swap (6 iter) |
+| 350+ orders (peak days) | ~instant | < 10s | < 10s | ~120 relocate + ~150 swap |
+
+Local search converges in 5-7 iterations. Each iteration runs a full relocate pass followed by a full swap pass over all order-provider pairs. Convergence is monotone (strict-improvement only) — every accepted move reduces the weighted objective.
+
+**Why relocate + swap is sufficient.** The problem structure is favorable for simple neighborhoods: skill-matching constraints partition the solution into relatively independent provider clusters, and time windows create natural "slots" that limit meaningful cross-cluster interactions. Empirically, the two-move neighborhood captures 85-95% of the travel reduction achievable by greedy alone → local search. Diminishing returns from 3-opt or chain moves: the slot structure means most feasible 3-exchanges decompose into a sequence of relocate + swap moves anyway.
+
+More advanced metaheuristics (ALNS, tabu search, simulated annealing) were considered but not implemented. The decision was driven by convergence data: local search closes the gap to greedy by 15-22% in travel on dense days, and the improvement from iteration 5 → 6 is consistently < 0.1% of the objective. For a system that re-optimizes daily (or intraday), the speed/quality tradeoff strongly favors fast convergence with simple moves over deeper search with longer runtimes.
+
+**Earlier CP-SAT attempt.** Before local search, we tested Google OR-Tools CP-SAT as Stage 3. On a 220-order day, CP-SAT produced a model with 15,851 variables and 220,198 constraints. With a 30s time limit, it returned UNKNOWN status — the problem was too large for the constraint propagation engine without specialized routing variables (Circuit, successor arcs). Even with warm-starting from the greedy solution via `AddHint`, CP-SAT couldn't improve on it within the time budget. Local search was a deliberate trade: give up provable optimality guarantees for a method that optimizes the actual objective end-to-end.
+
+---
+
 ## Mathematical Formulation
 
 The full VRPTW-SM formulation is in [`formulation/`](formulation/), including:
